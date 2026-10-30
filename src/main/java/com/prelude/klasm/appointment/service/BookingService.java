@@ -12,11 +12,13 @@ import com.prelude.klasm.catalog.service.ServiceTypeService;
 import com.prelude.klasm.catalog.service.ServiceTypeView;
 import com.prelude.klasm.common.error.ApiException;
 import com.prelude.klasm.common.error.ErrorCode;
+import com.prelude.klasm.common.logging.LogMasking;
 import com.prelude.klasm.customer.service.CustomerService;
 import com.prelude.klasm.dealership.service.DealershipService;
 import com.prelude.klasm.dealership.service.DealershipView;
 import com.prelude.klasm.dealership.service.ServiceBayView;
 import com.prelude.klasm.dealership.service.TechnicianView;
+import io.micrometer.core.instrument.Timer;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -25,6 +27,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
@@ -36,6 +40,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  */
 @Service
 public class BookingService {
+
+    private static final Logger log = LoggerFactory.getLogger(BookingService.class);
 
     static final int MAX_ATTEMPTS = 3;
     static final int MAX_ALTERNATIVES = 3;
@@ -49,6 +55,7 @@ public class BookingService {
     private final AppointmentQueryService queryService;
     private final BookingWindowPolicy bookingWindowPolicy;
     private final TransactionTemplate attemptTransaction;
+    private final BookingMetrics metrics;
     private final Clock clock;
 
     public BookingService(
@@ -61,6 +68,7 @@ public class BookingService {
             AppointmentQueryService queryService,
             BookingWindowPolicy bookingWindowPolicy,
             PlatformTransactionManager transactionManager,
+            BookingMetrics metrics,
             Clock clock) {
         this.dealershipService = dealershipService;
         this.serviceTypeService = serviceTypeService;
@@ -72,10 +80,44 @@ public class BookingService {
         this.bookingWindowPolicy = bookingWindowPolicy;
         this.attemptTransaction = new TransactionTemplate(transactionManager);
         this.attemptTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        this.metrics = metrics;
         this.clock = clock;
     }
 
     public BookingResult book(BookingCommand command) {
+        Timer.Sample sample = Timer.start();
+        try {
+            BookingResult result = bookUnmetered(command);
+            AppointmentView appointment = result.appointment();
+            if (result.created()) {
+                metrics.booked();
+            }
+            log.info(
+                    "Booking {} appointmentId={} dealershipId={} serviceTypeId={} serviceBayId={} technicianId={}"
+                            + " vinSuffix={}",
+                    result.created() ? "CREATED" : "REPLAYED",
+                    appointment.id(),
+                    appointment.dealershipId(),
+                    appointment.serviceTypeId(),
+                    appointment.serviceBay().id(),
+                    appointment.technician().id(),
+                    LogMasking.vinSuffix(command.vin()));
+            return result;
+        } catch (ApiException rejected) {
+            metrics.rejected(rejected.code());
+            log.info(
+                    "Booking rejected code={} dealershipId={} serviceTypeId={} vinSuffix={}",
+                    rejected.code(),
+                    command.dealershipId(),
+                    command.serviceTypeId(),
+                    LogMasking.vinSuffix(command.vin()));
+            throw rejected;
+        } finally {
+            sample.stop(metrics.duration());
+        }
+    }
+
+    private BookingResult bookUnmetered(BookingCommand command) {
         String requestHash = command.idempotencyKey() == null ? null : RequestHash.of(command);
         // Checked first: a retry must return the original result even if the time rules would now reject it
         Optional<BookingResult> replay = replay(command.idempotencyKey(), requestHash);
@@ -98,6 +140,9 @@ public class BookingService {
         AssignmentPlan plan = plan(command, dealership, start, end);
         AppointmentConflictException.Kind lastConflict = null;
         for (int attempt = 1; attempt <= MAX_ATTEMPTS && plan.hasCandidate(); attempt++) {
+            if (attempt > 1) {
+                metrics.retried();
+            }
             BayCandidate bay = plan.bay();
             TechnicianCandidate technician = plan.technician();
             try {

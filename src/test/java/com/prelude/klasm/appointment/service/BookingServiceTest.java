@@ -29,6 +29,7 @@ import com.prelude.klasm.customer.service.CustomerService;
 import com.prelude.klasm.dealership.service.DealershipService;
 import com.prelude.klasm.dealership.service.DealershipView;
 import com.prelude.klasm.dealership.service.ServiceBayView;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Clock;
 import java.time.DayOfWeek;
 import java.time.Duration;
@@ -67,6 +68,7 @@ class BookingServiceTest {
     private final AppointmentResourceLockRepository resourceLockRepository =
             mock(AppointmentResourceLockRepository.class);
     private final AppointmentQueryService queryService = mock(AppointmentQueryService.class);
+    private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
     private BookingService bookingService;
 
     @BeforeEach
@@ -84,6 +86,7 @@ class BookingServiceTest {
                 queryService,
                 new BookingWindowPolicy(clock, new BookingProperties(Duration.ofMinutes(60), Duration.ofDays(90))),
                 transactionManager,
+                new BookingMetrics(meterRegistry),
                 clock);
 
         when(dealershipService.getActive(dealershipId))
@@ -145,6 +148,20 @@ class BookingServiceTest {
 
         assertError(() -> bookingService.book(command(START, null, null)), ErrorCode.NO_AVAILABILITY);
         verify(insertRepository, times(BookingService.MAX_ATTEMPTS)).insertConfirmed(any());
+        assertThat(meterRegistry.counter("booking.assignment.retries").count()).isEqualTo(2.0);
+        assertThat(meterRegistry
+                        .counter("booking.conflicts", "reason", "no_availability")
+                        .count())
+                .isEqualTo(1.0);
+        assertThat(meterRegistry.counter("appointments.booked").count()).isZero();
+    }
+
+    @Test
+    void countsCreatedBookingsAndRecordsDuration() {
+        bookingService.book(command(START, null, null));
+
+        assertThat(meterRegistry.counter("appointments.booked").count()).isEqualTo(1.0);
+        assertThat(meterRegistry.timer("booking.duration").count()).isEqualTo(1);
     }
 
     @Test
