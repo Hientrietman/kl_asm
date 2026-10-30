@@ -1,0 +1,485 @@
+openapi: 3.1.0
+info:
+  title: OpenAPI definition
+  version: v0
+servers:
+- url: http://localhost:8080
+  description: Generated server url
+paths:
+  /api/v1/appointments:
+    get:
+      tags:
+      - appointment-controller
+      operationId: list
+      parameters:
+      - name: dealershipId
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+      - name: from
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date-time
+      - name: to
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date-time
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - CONFIRMED
+          - CANCELLED
+      - name: vin
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 0
+          minimum: 0
+      - name: size
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 20
+          maximum: 100
+          minimum: 1
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AppointmentPageResponse"
+    post:
+      tags:
+      - appointment-controller
+      operationId: create
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: false
+        schema:
+          type: string
+          maxLength: 64
+          minLength: 1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAppointmentRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AppointmentResponse"
+  /api/v1/appointments/{id}/cancel:
+    post:
+      tags:
+      - appointment-controller
+      operationId: cancel
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CancelAppointmentRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AppointmentResponse"
+  /api/v1/service-types:
+    get:
+      tags:
+      - service-type-controller
+      operationId: list_1
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ServiceTypeResponse"
+  /api/v1/dealerships:
+    get:
+      tags:
+      - dealership-controller
+      operationId: list_2
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DealershipResponse"
+  /api/v1/dealerships/{dealershipId}/technicians:
+    get:
+      tags:
+      - dealership-controller
+      operationId: technicians
+      parameters:
+      - name: dealershipId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TechnicianResponse"
+  /api/v1/dealerships/{dealershipId}/service-bays:
+    get:
+      tags:
+      - dealership-controller
+      operationId: serviceBays
+      parameters:
+      - name: dealershipId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ServiceBayResponse"
+  /api/v1/dealerships/{dealershipId}/availability:
+    get:
+      tags:
+      - availability-controller
+      operationId: availability
+      parameters:
+      - name: dealershipId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: serviceTypeId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: date
+        in: query
+        required: true
+        schema:
+          type: string
+          format: date
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AvailabilityResponse"
+  /api/v1/appointments/{id}:
+    get:
+      tags:
+      - appointment-controller
+      operationId: get
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AppointmentResponse"
+components:
+  schemas:
+    CreateAppointmentRequest:
+      type: object
+      properties:
+        dealershipId:
+          type: string
+          format: uuid
+        serviceTypeId:
+          type: string
+          format: uuid
+        startTime:
+          type: string
+          format: date-time
+        customer:
+          $ref: "#/components/schemas/Customer"
+        vehicle:
+          $ref: "#/components/schemas/Vehicle"
+        serviceBayId:
+          type: string
+          format: uuid
+        technicianId:
+          type: string
+          format: uuid
+        notes:
+          type: string
+          maxLength: 500
+          minLength: 0
+      required:
+      - customer
+      - dealershipId
+      - serviceTypeId
+      - startTime
+      - vehicle
+    Customer:
+      type: object
+      properties:
+        fullName:
+          type: string
+          maxLength: 100
+          minLength: 0
+          pattern: "^[^\\p{Cc}]*$"
+        email:
+          type: string
+          format: email
+          maxLength: 254
+          minLength: 0
+        phone:
+          type: string
+          pattern: "^\\+[1-9]\\d{6,14}$"
+      required:
+      - email
+      - fullName
+    Vehicle:
+      type: object
+      properties:
+        vin:
+          type: string
+        make:
+          type: string
+          maxLength: 50
+          minLength: 0
+        model:
+          type: string
+          maxLength: 50
+          minLength: 0
+        year:
+          type: integer
+          format: int32
+      required:
+      - vin
+    AppointmentResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+        dealershipId:
+          type: string
+          format: uuid
+        timeZone:
+          type: string
+        serviceTypeId:
+          type: string
+          format: uuid
+        serviceBay:
+          $ref: "#/components/schemas/ServiceBay"
+        technician:
+          $ref: "#/components/schemas/Technician"
+        customerId:
+          type: string
+          format: uuid
+        vehicleId:
+          type: string
+          format: uuid
+        startTime:
+          type: string
+          format: date-time
+        endTime:
+          type: string
+          format: date-time
+        cancelledAt:
+          type: string
+          format: date-time
+        cancellationReason:
+          type: string
+    ServiceBay:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        code:
+          type: string
+    Technician:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        fullName:
+          type: string
+    CancelAppointmentRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          maxLength: 500
+          minLength: 0
+    ServiceTypeResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        code:
+          type: string
+        name:
+          type: string
+        durationMinutes:
+          type: integer
+          format: int32
+    DealershipResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        timeZone:
+          type: string
+        workingHours:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkingHours"
+    WorkingHours:
+      type: object
+      properties:
+        dayOfWeek:
+          type: string
+          enum:
+          - MONDAY
+          - TUESDAY
+          - WEDNESDAY
+          - THURSDAY
+          - FRIDAY
+          - SATURDAY
+          - SUNDAY
+        openTime:
+          type: string
+          format: time-local
+        closeTime:
+          type: string
+          format: time-local
+    TechnicianResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        fullName:
+          type: string
+        serviceTypeIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+    ServiceBayResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        code:
+          type: string
+    AvailabilityResponse:
+      type: object
+      properties:
+        dealershipId:
+          type: string
+          format: uuid
+        serviceTypeId:
+          type: string
+          format: uuid
+        date:
+          type: string
+          format: date
+        timeZone:
+          type: string
+        durationMinutes:
+          type: integer
+          format: int32
+        slots:
+          type: array
+          items:
+            $ref: "#/components/schemas/Slot"
+    Slot:
+      type: object
+      properties:
+        startTime:
+          type: string
+          format: date-time
+        localStartTime:
+          type: string
+          format: date-time
+    AppointmentPageResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/AppointmentResponse"
+        page:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32

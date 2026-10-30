@@ -1,0 +1,13 @@
+.git
+.gitignore
+.idea
+*.iml
+target
+*.md
+docs
+load-test
+.env
+.env.*
+!.env.example
+.agents
+.github

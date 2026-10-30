@@ -1,4 +1,23 @@
 services:
+  app:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      DB_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-klasm}
+      DB_USERNAME: ${POSTGRES_USER:-klasm}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-klasm}
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:8080/actuator/health/readiness || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+
   db:
     image: postgres:16-alpine
     environment:

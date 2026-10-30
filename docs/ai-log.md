@@ -78,3 +78,11 @@ One entry per working session (AGENTS.md §10).
 - Problems found (wrong, missing, risky): None. The earlier B8 build was cancelled by the user; this run completed it.
 - How I verified (docs read, tests, manual check): `.\mvnw.cmd clean verify` BUILD SUCCESS: 72 integration tests pass (0 failures/errors), Spotless 100 files clean. `ObservabilityIT` (Prometheus scrape deltas, no-PII logs) passed.
 - What I changed or rejected, and why: OTLP exporter and the Compose observability profile stay out of scope (need dependency approval, Phase C).
+
+
+## 2026-10-30: Phase C packaging, documentation, openapi and load test
+- Goal / prompt intent: Complete Phase C deliverables: multi-stage Dockerfile, docker-compose app service, openapi.yaml export, comprehensive README with AI narrative and cURL examples, k6 load testing suite for NFR-2.
+- What the AI produced: Multi-stage `Dockerfile` (maven -> Temurin 17 JRE Alpine, non-root user `appuser`, healthcheck via wget), `.dockerignore`, `app` service in `docker-compose.yml`, `OpenApiExportIT` generating root `openapi.yaml`, `README.md` (architecture, cURL examples for all endpoints, error catalog, observability, test guide, AI Collaboration Narrative), and `load-test/` suite (`seed-load-data.sql` with 10,800 historical appointments, `booking-load.js` k6 script with 20 VUs / p95 < 500ms thresholds, and `load-test/README.md`).
+- Problems found (wrong, missing, risky): Maven wrapper download failed in offline sandbox; solved by linking downloaded maven distribution in `.m2/wrapper/dists`. Docker daemon access on Windows requires unsandboxed execution to reach `\\.\pipe\docker_engine`. Line endings on generated IT initially triggered Spotless check failure; resolved with `spotless:apply`. Random port in OpenAPI server URL was replaced with `http://localhost:8080`.
+- How I verified (docs read, tests, manual check): `.\mvnw.cmd clean verify` BUILD SUCCESS: 92 unit tests, 73 integration tests (all passed), Spotless 101 files clean, JaCoCo report generated, `openapi.yaml` exported and validated.
+- What I changed or rejected, and why: OTLP exporter and extra Prometheus/Grafana containers left out of scope per handoff notes to avoid unapproved dependencies. k6 chosen for NFR-2 load test harness per user preference.
