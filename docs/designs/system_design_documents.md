@@ -142,6 +142,9 @@ sequenceDiagram
         V->>D: SELECT free bays and qualified free technicians
         V-->>A: ordered candidates
         loop up to 3 attempts
+            A->>D: BEGIN REQUIRES_NEW
+            A->>D: acquire sorted transaction advisory locks (bay, technician, VIN)
+            A->>D: find or create customer and vehicle
             A->>D: INSERT appointment (bay, technician, range)
             alt insert succeeds
                 A->>D: COMMIT
@@ -158,8 +161,8 @@ sequenceDiagram
 
 Notes:
 
-- The candidate query is an optimization. Correctness comes from the exclusion constraints at insert time (section 6).
-- After a failed insert inside a PostgreSQL transaction, the transaction is aborted. The implementation therefore performs each insert attempt in its own short transaction (or uses a savepoint) so that a retry is possible. Customer and vehicle resolution is idempotent, so repeating it is safe.
+- The candidate query and advisory locks are optimizations. Correctness comes from the exclusion constraints at insert time (section 6).
+- Each insert attempt uses its own short transaction. It acquires advisory locks for the bay, technician, and VIN in sorted order before customer/vehicle resolution, preventing conflicting GiST inserts from deadlocking. If an insert fails, the transaction is aborted; the next candidate can be tried in a new transaction. Customer and vehicle resolution is idempotent, so repeating it is safe.
 - When explicit `serviceBayId` or `technicianId` overrides are supplied, validation replaces candidate search for that resource and a conflict returns `RESOURCE_CONFLICT` immediately.
 
 ### 4.2 Cancel an appointment
@@ -277,7 +280,7 @@ The central invariant is: **for any bay, technician or vehicle, no two `CONFIRME
 |-------|-----------|---------|
 | Database | Three exclusion constraints on `tstzrange(start_time, end_time, '[)')` with a partial predicate `status = 'CONFIRMED'` (ADR-003) | Final authority. Holds across any number of application instances |
 | Application | Candidate query and deterministic ordering (ADR-009) | Chooses likely-free resources to avoid needless conflicts |
-| Application | Bounded retry on SQLSTATE `23P01` (3 attempts) | Absorbs races between two requests that picked the same candidate |
+| Application | Sorted transaction-scoped advisory locks for bay, technician, and VIN; bounded retry on SQLSTATE `23P01` (3 attempts) | Serializes conflicting insert attempts to avoid GiST deadlocks; retries remaining exclusion conflicts |
 | API | Idempotency key with unique constraint (ADR-010) | Safe client retries |
 
 Error mapping: the constraint name in the PostgreSQL error identifies the resource type (bay, technician, vehicle), which selects the API error code (`RESOURCE_CONFLICT`, `NO_AVAILABILITY` or `VEHICLE_ALREADY_BOOKED`).

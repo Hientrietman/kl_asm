@@ -4,6 +4,7 @@ import com.prelude.klasm.common.error.ApiException;
 import com.prelude.klasm.common.error.ErrorCode;
 import com.prelude.klasm.dealership.repository.DealershipEntity;
 import com.prelude.klasm.dealership.repository.DealershipRepository;
+import com.prelude.klasm.dealership.repository.ServiceBayEntity;
 import com.prelude.klasm.dealership.repository.ServiceBayRepository;
 import com.prelude.klasm.dealership.repository.TechnicianEntity;
 import com.prelude.klasm.dealership.repository.TechnicianRepository;
@@ -53,10 +54,63 @@ public class DealershipService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
+    public DealershipView getActive(UUID dealershipId) {
+        return dealerships
+                .findActiveWithWorkingHours(dealershipId)
+                .map(DealershipService::toView)
+                .orElseThrow(() -> dealershipNotFound(dealershipId));
+    }
+
+    /** FR-2.5: an explicitly requested bay must exist, be active and belong to the dealership. */
+    @Transactional(readOnly = true)
+    public ServiceBayView requireServiceBay(UUID dealershipId, UUID serviceBayId) {
+        ServiceBayEntity bay = serviceBays
+                .findById(serviceBayId)
+                .filter(ServiceBayEntity::isActive)
+                .orElseThrow(
+                        () -> new ApiException(ErrorCode.NOT_FOUND, "Service bay " + serviceBayId + " not found."));
+        if (!bay.getDealershipId().equals(dealershipId)) {
+            throw new ApiException(
+                    ErrorCode.RESOURCE_DEALERSHIP_MISMATCH,
+                    "Service bay " + serviceBayId + " belongs to another dealership.");
+        }
+        return new ServiceBayView(bay.getId(), bay.getCode());
+    }
+
+    /** FR-2.5: an explicitly requested technician must exist, belong to the dealership and be qualified. */
+    @Transactional(readOnly = true)
+    public TechnicianView requireQualifiedTechnician(UUID dealershipId, UUID technicianId, UUID serviceTypeId) {
+        TechnicianEntity technician = technicians
+                .findWithQualifications(technicianId)
+                .filter(TechnicianEntity::isActive)
+                .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, "Technician " + technicianId + " not found."));
+        if (!technician.getDealershipId().equals(dealershipId)) {
+            throw new ApiException(
+                    ErrorCode.RESOURCE_DEALERSHIP_MISMATCH,
+                    "Technician " + technicianId + " belongs to another dealership.");
+        }
+        if (!technician.getServiceTypeIds().contains(serviceTypeId)) {
+            throw new ApiException(
+                    ErrorCode.TECHNICIAN_NOT_QUALIFIED,
+                    "Technician " + technicianId + " is not qualified for service type " + serviceTypeId + ".");
+        }
+        return toView(technician);
+    }
+
+    @Transactional(readOnly = true)
+    public boolean hasQualifiedTechnician(UUID dealershipId, UUID serviceTypeId) {
+        return technicians.existsQualified(dealershipId, serviceTypeId);
+    }
+
     private void requireActive(UUID dealershipId) {
         if (!dealerships.existsByIdAndActiveTrue(dealershipId)) {
-            throw new ApiException(ErrorCode.NOT_FOUND, "Dealership " + dealershipId + " not found.");
+            throw dealershipNotFound(dealershipId);
         }
+    }
+
+    private static ApiException dealershipNotFound(UUID dealershipId) {
+        return new ApiException(ErrorCode.NOT_FOUND, "Dealership " + dealershipId + " not found.");
     }
 
     private static DealershipView toView(DealershipEntity entity) {

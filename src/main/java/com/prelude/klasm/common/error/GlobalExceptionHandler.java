@@ -42,7 +42,11 @@ class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
     @ExceptionHandler(ApiException.class)
     ResponseEntity<Object> handleApiException(ApiException ex, WebRequest request) {
-        return problem(ex, ex.code(), ex.getMessage(), List.of(), request);
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(ex.code().status(), ex.getMessage());
+        problemDetail.setProperty("code", ex.code().name());
+        ex.properties().forEach(problemDetail::setProperty);
+        return handleExceptionInternal(
+                ex, problemDetail, new HttpHeaders(), ex.code().status(), request);
     }
 
     @ExceptionHandler(ConstraintViolationException.class)

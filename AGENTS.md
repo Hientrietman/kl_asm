@@ -46,6 +46,7 @@ These protect the core business rule (no double-booking). Never weaken them to m
 ## 5. Booking transaction rules
 
 - A failed `INSERT` aborts the PostgreSQL transaction. Each insert attempt during auto-assignment must run in its own short transaction (or a savepoint) so a retry is possible.
+- Before customer/vehicle resolution and insert, acquire transaction-scoped advisory locks for the bay, technician, and VIN in sorted key order. Keep exclusion constraints as the final authority; the 20-request concurrency test must assert zero 5xx responses and a catalog 409 for every loser.
 - Retry only on SQLSTATE `23P01`, at most 3 attempts, moving to the next candidate. Use the constraint name to decide which error code to return. Do not catch generic exceptions to hide failures.
 - Customer and vehicle resolution must be idempotent so repeating it is safe.
 - Idempotency: same `Idempotency-Key` and same body returns the original result; same key and different body returns `IDEMPOTENCY_KEY_MISMATCH`.
