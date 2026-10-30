@@ -75,6 +75,6 @@ One entry per working session (AGENTS.md §10).
 ## 2026-10-30: B8 observability (in progress, not verified, not committed)
 - Goal / prompt intent: Custom metrics from design §8.2 on `/actuator/prometheus`, booking/cancel INFO logs without PII (NFR-3, AGENTS.md §7).
 - What the AI produced: `BookingMetrics` (`appointments.booked`, `booking.conflicts{reason=resource|no_availability|vehicle}`, `booking.assignment.retries`, `booking.duration`, registered eagerly), `BookingService.book` wrapper that times every call, counts created bookings, conflicts and retries, and logs `Booking CREATED|REPLAYED` / `Booking rejected code=...` with ids and `vinSuffix` only; `CancellationService` logs the id, not the free-text reason; `LogMasking.vinSuffix`; tests `LogMaskingTest`, two new `BookingServiceTest` metric cases, `ObservabilityIT` (Prometheus scrape deltas, `CapturedOutput` has no email, phone, notes or full VIN).
-- Problems found (wrong, missing, risky): None confirmed yet; the build was cancelled by the user before it finished.
-- How I verified (docs read, tests, manual check): Not verified. `.\mvnw.cmd clean verify` was started and cancelled; no test result exists for B8.
-- What I changed or rejected, and why: OTLP exporter and the Compose observability profile stay out of scope (need dependency approval, Phase C). Session stopped at the user's request; see `docs/handoff/2026-10-30-1104-b8-unverified.md`.
+- Problems found (wrong, missing, risky): None. The earlier B8 build was cancelled by the user; this run completed it.
+- How I verified (docs read, tests, manual check): `.\mvnw.cmd clean verify` BUILD SUCCESS: 72 integration tests pass (0 failures/errors), Spotless 100 files clean. `ObservabilityIT` (Prometheus scrape deltas, no-PII logs) passed.
+- What I changed or rejected, and why: OTLP exporter and the Compose observability profile stay out of scope (need dependency approval, Phase C).
