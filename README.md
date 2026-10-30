@@ -349,6 +349,29 @@ Custom metric indicators:
 - `booking_assignment_retries_total`: Retries executed during concurrent auto-assignment races
 - `booking_duration_seconds`: Histogram and summary of end-to-end booking execution latency
 
+### Visual Observability Dashboards
+
+You have two ways to watch these metrics visually instead of raw `curl`:
+
+#### 1. Instant Built-in Live Dashboard (Zero Setup)
+Open your browser to:
+👉 **`http://localhost:8080/dashboard.html`**
+
+This embedded dashboard automatically polls `/actuator/prometheus` and `/api/v1/appointments` every 2 seconds, displaying:
+- Live cards for Bookings, Conflicts (by reason), Assignment Retries, Latency (average & max), and HikariCP DB pool utilization.
+- Interactive demo buttons to book test appointments, trigger slot conflicts, and cancel appointments with live animated counter updates.
+- Real-time table of recent appointments.
+
+#### 2. Prometheus & Grafana Container Stack (Optional Profile)
+To launch a full dedicated Prometheus and Grafana instance:
+
+```bash
+docker compose --profile observability up -d
+```
+
+- **Prometheus UI**: `http://localhost:9090` (configured to scrape `app:8080` every 5 seconds)
+- **Grafana UI**: `http://localhost:3000` (User: `admin`, Password: `admin`)
+
 ---
 
 ## 7. Testing & Verification

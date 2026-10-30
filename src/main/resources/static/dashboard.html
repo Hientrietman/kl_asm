@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Keyloop Service Scheduler — Observability Dashboard</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --border: #334155;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --accent: #38bdf8;
+      --accent-hover: #0284c7;
+      --success: #34d399;
+      --warning: #fbbf24;
+      --danger: #f87171;
+      --card-radius: 12px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif; }
+    body { background-color: var(--bg); color: var(--text); padding: 24px; min-height: 100vh; }
+    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid var(--border); }
+    .title-area h1 { font-size: 24px; font-weight: 700; color: var(--text); }
+    .title-area p { color: var(--text-muted); font-size: 14px; margin-top: 4px; }
+    .status-badge { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; padding: 6px 12px; border-radius: 9999px; background: rgba(52, 211, 153, 0.15); color: var(--success); font-weight: 600; }
+    .pulse-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--success); box-shadow: 0 0 8px var(--success); animation: pulse 2s infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.9); } }
+
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 24px; }
+    .card { background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--card-radius); padding: 20px; transition: transform 0.15s ease, border-color 0.15s ease; }
+    .card:hover { border-color: #475569; }
+    .card-label { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 8px; }
+    .card-value { font-size: 32px; font-weight: 700; color: var(--text); }
+    .card-subtext { font-size: 12px; color: var(--text-muted); margin-top: 6px; }
+
+    .card.blue .card-value { color: var(--accent); }
+    .card.green .card-value { color: var(--success); }
+    .card.yellow .card-value { color: var(--warning); }
+    .card.red .card-value { color: var(--danger); }
+
+    .actions-panel { background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--card-radius); padding: 20px; margin-bottom: 24px; }
+    .actions-header { font-size: 16px; font-weight: 600; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; }
+    .btn-group { display: flex; flex-wrap: wrap; gap: 10px; }
+    button { background: #334155; color: white; border: none; padding: 10px 16px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: background 0.15s ease; display: inline-flex; align-items: center; gap: 6px; }
+    button:hover { background: #475569; }
+    button.primary { background: var(--accent); color: #0f172a; }
+    button.primary:hover { background: var(--accent-hover); }
+    button.danger { background: rgba(248, 113, 113, 0.2); color: var(--danger); border: 1px solid var(--danger); }
+    button.danger:hover { background: rgba(248, 113, 113, 0.3); }
+
+    .section-title { font-size: 18px; font-weight: 600; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; }
+    .table-container { background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--card-radius); overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; text-align: left; font-size: 13px; }
+    th { padding: 12px 16px; background: #1e293b; color: var(--text-muted); font-weight: 600; border-bottom: 1px solid var(--border); }
+    td { padding: 12px 16px; border-bottom: 1px solid var(--border); color: var(--text); }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(255, 255, 255, 0.02); }
+
+    .badge { display: inline-block; padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+    .badge.confirmed { background: rgba(52, 211, 153, 0.2); color: var(--success); }
+    .badge.cancelled { background: rgba(248, 113, 113, 0.2); color: var(--danger); }
+
+    .log-box { background: #0b1120; border: 1px solid var(--border); border-radius: 8px; padding: 12px; font-family: monospace; font-size: 12px; color: #a5f3fc; max-height: 140px; overflow-y: auto; margin-top: 12px; }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <div class="title-area">
+      <h1>Keyloop Service Scheduler — Live Metrics</h1>
+      <p>Real-time metrics polled directly from <code>/actuator/prometheus</code></p>
+    </div>
+    <div style="display: flex; gap: 12px; align-items: center;">
+      <span class="status-badge"><span class="pulse-dot"></span> Live Scrape Active (2s)</span>
+      <a href="/swagger-ui.html" target="_blank" style="color: var(--accent); font-size: 13px; text-decoration: none; font-weight: 600;">Swagger UI &rarr;</a>
+    </div>
+  </div>
+
+  <!-- Metric Counters Grid -->
+  <div class="grid">
+    <div class="card green">
+      <div class="card-label">Appointments Booked</div>
+      <div class="card-value" id="val-booked">0</div>
+      <div class="card-subtext">appointments_booked_total</div>
+    </div>
+    <div class="card red">
+      <div class="card-label">Booking Conflicts</div>
+      <div class="card-value" id="val-conflicts">0</div>
+      <div class="card-subtext" id="val-conflicts-sub">booking_conflicts_total</div>
+    </div>
+    <div class="card yellow">
+      <div class="card-label">Auto-Assign Retries</div>
+      <div class="card-value" id="val-retries">0</div>
+      <div class="card-subtext">booking_assignment_retries_total</div>
+    </div>
+    <div class="card blue">
+      <div class="card-label">Avg Booking Latency</div>
+      <div class="card-value" id="val-avg-lat">0 ms</div>
+      <div class="card-subtext" id="val-max-lat">Max: 0 ms</div>
+    </div>
+    <div class="card">
+      <div class="card-label">DB Connections (Hikari)</div>
+      <div class="card-value" id="val-db-conn">0 / 10</div>
+      <div class="card-subtext" id="val-db-sub">Active: 0, Idle: 10</div>
+    </div>
+    <div class="card">
+      <div class="card-label">JVM Heap Used</div>
+      <div class="card-value" id="val-heap">0 MB</div>
+      <div class="card-subtext">jvm_memory_used_bytes</div>
+    </div>
+  </div>
+
+  <!-- Interactive Demo Actions -->
+  <div class="actions-panel">
+    <div class="actions-header">
+      <span>Interactive Verification Actions</span>
+      <span style="font-size: 12px; color: var(--text-muted);">Trigger live transactions and watch meters update</span>
+    </div>
+    <div class="btn-group">
+      <button class="primary" onclick="bookAppointment()">+ Quick Book (Oil Change)</button>
+      <button class="danger" onclick="triggerConflict()">! Trigger Slot Conflict (Double Book)</button>
+      <button onclick="refreshData()">&#8635; Force Refresh</button>
+    </div>
+    <div class="log-box" id="action-log">> Ready. Polling metrics every 2000 ms...</div>
+  </div>
+
+  <!-- Recent Appointments Table -->
+  <div class="section-title">
+    <span>Recent Appointments (Live from <code>/api/v1/appointments</code>)</span>
+  </div>
+  <div class="table-container">
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Start Time (UTC)</th>
+          <th>Service Type</th>
+          <th>Bay</th>
+          <th>Technician</th>
+          <th>Status</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody id="appt-tbody">
+        <tr><td colspan="7" style="text-align:center; color: var(--text-muted); padding: 24px;">No appointments loaded yet.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <script>
+    const LONDON_DEALERSHIP = 'd0000000-0000-0000-0000-000000000001';
+    const OIL_CHANGE_SERVICE = 'c0000000-0000-0000-0000-000000000001';
+
+    function log(msg) {
+      const box = document.getElementById('action-log');
+      const time = new Date().toLocaleTimeString();
+      box.innerHTML = `[${time}] ${msg}<br>` + box.innerHTML;
+    }
+
+    async function fetchPrometheusMetrics() {
+      try {
+        const res = await fetch('/actuator/prometheus');
+        if (!res.ok) throw new Error('Failed to load prometheus endpoint');
+        const text = await res.text();
+
+        // 1. appointments_booked_total
+        const bookedMatch = text.match(/appointments_booked_total\s+([0-9.]+)/);
+        if (bookedMatch) document.getElementById('val-booked').innerText = Math.round(parseFloat(bookedMatch[1]));
+
+        // 2. booking_conflicts_total
+        let totalConflicts = 0;
+        let conflictDetails = [];
+        const conflictRegex = /booking_conflicts_total\{reason="([^"]+)"\}\s+([0-9.]+)/g;
+        let cMatch;
+        while ((cMatch = conflictRegex.exec(text)) !== null) {
+          const count = parseFloat(cMatch[2]);
+          totalConflicts += count;
+          if (count > 0) conflictDetails.push(`${cMatch[1]}: ${Math.round(count)}`);
+        }
+        document.getElementById('val-conflicts').innerText = Math.round(totalConflicts);
+        if (conflictDetails.length > 0) {
+          document.getElementById('val-conflicts-sub').innerText = conflictDetails.join(', ');
+        }
+
+        // 3. booking_assignment_retries_total
+        const retriesMatch = text.match(/booking_assignment_retries_total\s+([0-9.]+)/);
+        if (retriesMatch) document.getElementById('val-retries').innerText = Math.round(parseFloat(retriesMatch[1]));
+
+        // 4. booking_duration_seconds
+        const sumMatch = text.match(/booking_duration_seconds_sum\s+([0-9.]+)/);
+        const countMatch = text.match(/booking_duration_seconds_count\s+([0-9.]+)/);
+        const maxMatch = text.match(/booking_duration_seconds_max\s+([0-9.]+)/);
+
+        if (countMatch && parseFloat(countMatch[1]) > 0 && sumMatch) {
+          const avgSec = parseFloat(sumMatch[1]) / parseFloat(countMatch[1]);
+          document.getElementById('val-avg-lat').innerText = (avgSec * 1000).toFixed(1) + ' ms';
+        }
+        if (maxMatch) {
+          document.getElementById('val-max-lat').innerText = 'Max: ' + (parseFloat(maxMatch[1]) * 1000).toFixed(1) + ' ms';
+        }
+
+        // 5. HikariCP connections
+        const activeMatch = text.match(/hikaricp_connections_active\{pool="HikariPool-1"\}\s+([0-9.]+)/);
+        const idleMatch = text.match(/hikaricp_connections_idle\{pool="HikariPool-1"\}\s+([0-9.]+)/);
+        const totalMatch = text.match(/hikaricp_connections\{pool="HikariPool-1"\}\s+([0-9.]+)/);
+        if (totalMatch) {
+          const act = activeMatch ? Math.round(parseFloat(activeMatch[1])) : 0;
+          const idle = idleMatch ? Math.round(parseFloat(idleMatch[1])) : 0;
+          const tot = Math.round(parseFloat(totalMatch[1]));
+          document.getElementById('val-db-conn').innerText = `${act} / ${tot}`;
+          document.getElementById('val-db-sub').innerText = `Active: ${act}, Idle: ${idle}`;
+        }
+
+        // 6. JVM Heap
+        const heapMatch = text.match(/jvm_memory_used_bytes\{area="heap"[^}]*\}\s+([0-9.]+)/);
+        if (heapMatch) {
+          const mb = (parseFloat(heapMatch[1]) / (1024 * 1024)).toFixed(0);
+          document.getElementById('val-heap').innerText = `${mb} MB`;
+        }
+
+      } catch (err) {
+        console.error('Error fetching metrics', err);
+      }
+    }
+
+    async function fetchAppointments() {
+      try {
+        const res = await fetch('/api/v1/appointments?page=0&size=10');
+        if (!res.ok) return;
+        const data = await res.json();
+        const tbody = document.getElementById('appt-tbody');
+
+        if (!data.content || data.content.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color: var(--text-muted); padding: 24px;">No appointments found.</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = data.content.map(a => `
+          <tr>
+            <td style="font-family: monospace; font-size: 11px;">${a.id.substring(0, 8)}...</td>
+            <td>${a.startTime}</td>
+            <td>${a.serviceTypeName || 'Oil Change'}</td>
+            <td>${a.serviceBayCode || 'BAY-01'}</td>
+            <td>${a.technicianName || 'Technician'}</td>
+            <td><span class="badge ${a.status === 'CONFIRMED' ? 'confirmed' : 'cancelled'}">${a.status}</span></td>
+            <td>
+              ${a.status === 'CONFIRMED' ? `<button style="padding: 4px 8px; font-size: 11px;" onclick="cancelAppointment('${a.id}')">Cancel</button>` : '-'}
+            </td>
+          </tr>
+        `).join('');
+      } catch (err) {
+        console.error('Error fetching appointments', err);
+      }
+    }
+
+    // Helper: generate future 15-min start time
+    function getFutureStartTime(daysAhead = 15, hour = 10, minute = 0) {
+      const d = new Date(Date.now() + daysAhead * 24 * 60 * 60 * 1000);
+      if (d.getUTCDay() === 0) d.setUTCDate(d.getUTCDate() + 1); // skip Sunday
+      if (d.getUTCDay() === 6) d.setUTCDate(d.getUTCDate() + 2); // skip Saturday
+      d.setUTCHours(hour, minute, 0, 0);
+      return d.toISOString();
+    }
+
+    // Helper: generate random valid VIN
+    function getRandomVin() {
+      const chars = '0123456789ABCDEFGHJKLMNPRSTUVWXYZ';
+      let suffix = '';
+      for (let i = 0; i < 9; i++) suffix += chars.charAt(Math.floor(Math.random() * chars.length));
+      return '1HGCR2F8' + suffix;
+    }
+
+    let lastCreatedStartTime = null;
+
+    async function bookAppointment() {
+      const vin = getRandomVin();
+      const startTime = getFutureStartTime(Math.floor(Math.random() * 20) + 5, 10, 0);
+      lastCreatedStartTime = startTime;
+
+      log(`Sending booking request for VIN ${vin.substring(11)} at ${startTime}...`);
+      try {
+        const res = await fetch('/api/v1/appointments', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            dealershipId: LONDON_DEALERSHIP,
+            serviceTypeId: OIL_CHANGE_SERVICE,
+            startTime: startTime,
+            customer: {
+              fullName: "Demo Driver",
+              email: `driver_${Date.now()}@example.com`,
+              phone: "+447911123456"
+            },
+            vehicle: {
+              vin: vin,
+              make: "Honda",
+              model: "Civic",
+              year: 2022
+            }
+          })
+        });
+
+        const data = await res.json();
+        if (res.status === 201) {
+          log(`✅ SUCCESS (201 Created): Appointment ${data.id.substring(0,8)} booked on ${data.serviceBayCode} with ${data.technicianName}.`);
+        } else {
+          log(`⚠️ Conflict/Error (${res.status}): ${data.code || data.detail}`);
+        }
+        refreshData();
+      } catch (e) {
+        log(`❌ Network error: ${e.message}`);
+      }
+    }
+
+    async function triggerConflict() {
+      if (!lastCreatedStartTime) {
+        lastCreatedStartTime = getFutureStartTime(10, 9, 0);
+      }
+      const vin = getRandomVin();
+      log(`Deliberately flooding all 3 bays for slot ${lastCreatedStartTime} to trigger NO_AVAILABILITY conflict...`);
+
+      for (let i = 0; i < 4; i++) {
+        await fetch('/api/v1/appointments', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            dealershipId: LONDON_DEALERSHIP,
+            serviceTypeId: OIL_CHANGE_SERVICE,
+            startTime: lastCreatedStartTime,
+            customer: { fullName: `Driver ${i}`, email: `conflict_${i}_${Date.now()}@example.com`, phone: "+447911123456" },
+            vehicle: { vin: getRandomVin(), make: "Ford", model: "Focus", year: 2021 }
+          })
+        });
+      }
+      log(`Flood sent. Check the "Booking Conflicts" counter above!`);
+      refreshData();
+    }
+
+    async function cancelAppointment(id) {
+      log(`Cancelling appointment ${id.substring(0, 8)}...`);
+      try {
+        const res = await fetch(`/api/v1/appointments/${id}/cancel`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason: "User cancelled from web dashboard" })
+        });
+        if (res.ok) {
+          log(`✅ Appointment ${id.substring(0,8)} cancelled successfully.`);
+        }
+        refreshData();
+      } catch (e) {
+        log(`❌ Error: ${e.message}`);
+      }
+    }
+
+    function refreshData() {
+      fetchPrometheusMetrics();
+      fetchAppointments();
+    }
+
+    // Auto-poll every 2 seconds
+    setInterval(refreshData, 2000);
+    refreshData();
+  </script>
+</body>
+</html>
