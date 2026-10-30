@@ -23,8 +23,7 @@ class ArchitectureTest {
             List.of("appointment", "availability", "dealership", "customer", "catalog");
 
     @ArchTest
-    static final ArchRule noFieldInjection =
-            GeneralCodingRules.NO_CLASSES_SHOULD_USE_FIELD_INJECTION.allowEmptyShould(true);
+    static final ArchRule noFieldInjection = GeneralCodingRules.NO_CLASSES_SHOULD_USE_FIELD_INJECTION;
 
     @ArchTest
     static final ArchRule noSystemClockCalls = noClasses()
@@ -46,8 +45,7 @@ class ArchitectureTest {
             .resideInAPackage("..controller..")
             .should()
             .dependOnClassesThat()
-            .resideInAPackage("..repository..")
-            .allowEmptyShould(true);
+            .resideInAPackage("..repository..");
 
     @ArchTest
     static void modulesDoNotUseOtherModulesRepositories(JavaClasses classes) {
