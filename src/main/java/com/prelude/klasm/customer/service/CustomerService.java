@@ -1,6 +1,7 @@
 package com.prelude.klasm.customer.service;
 
 import com.prelude.klasm.customer.repository.CustomerVehicleRepository;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -25,5 +26,10 @@ public class CustomerService {
     @Transactional(propagation = Propagation.MANDATORY)
     public UUID resolveVehicle(String vin, String make, String model, Integer year) {
         return repository.findOrCreateVehicle(vin, make, model, year);
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<UUID> findVehicleIdByVin(String vin) {
+        return repository.findVehicleIdByVin(vin);
     }
 }

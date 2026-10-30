@@ -1,6 +1,7 @@
 package com.prelude.klasm.customer.repository;
 
 import java.sql.Types;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
@@ -42,5 +43,13 @@ public class CustomerVehicleRepository {
                 ON CONFLICT (vin) DO NOTHING
                 """, params);
         return jdbc.queryForObject("SELECT id FROM vehicle WHERE vin = :vin", params, UUID.class);
+    }
+
+    public Optional<UUID> findVehicleIdByVin(String vin) {
+        return jdbc
+                .queryForList(
+                        "SELECT id FROM vehicle WHERE vin = :vin", new MapSqlParameterSource("vin", vin), UUID.class)
+                .stream()
+                .findFirst();
     }
 }
