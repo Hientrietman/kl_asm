@@ -72,6 +72,60 @@ docker compose down
    .\mvnw.cmd spring-boot:run
    ```
 
+### 3.3 Quick 3-Minute Verification Walkthrough
+
+Once running, execute this step-by-step sequence in your terminal to verify the entire system end-to-end:
+
+```bash
+# 1. Health check & readiness
+curl -s http://localhost:8080/actuator/health/readiness
+
+# 2. Query available slots for London (Oil Change, Mon 2026-11-16)
+curl -s "http://localhost:8080/api/v1/dealerships/d0000000-0000-0000-0000-000000000001/availability?serviceTypeId=c0000000-0000-0000-0000-000000000001&date=2026-11-16"
+
+# 3. Create appointment with auto-assignment & Idempotency-Key (Returns 201 Created)
+curl -i -X POST http://localhost:8080/api/v1/appointments \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: demo-key-001" \
+  -d '{
+    "dealershipId": "d0000000-0000-0000-0000-000000000001",
+    "serviceTypeId": "c0000000-0000-0000-0000-000000000001",
+    "startTime": "2026-11-16T09:00:00Z",
+    "customer": { "fullName": "Jane Doe", "email": "jane@example.com", "phone": "+447911123456" },
+    "vehicle": { "vin": "1HGCM82633A004352", "make": "Honda", "model": "Accord", "year": 2022 }
+  }'
+
+# 4. Replay exact same request with same Idempotency-Key (Returns 200 OK with original appointment)
+curl -i -X POST http://localhost:8080/api/v1/appointments \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: demo-key-001" \
+  -d '{
+    "dealershipId": "d0000000-0000-0000-0000-000000000001",
+    "serviceTypeId": "c0000000-0000-0000-0000-000000000001",
+    "startTime": "2026-11-16T09:00:00Z",
+    "customer": { "fullName": "Jane Doe", "email": "jane@example.com", "phone": "+447911123456" },
+    "vehicle": { "vin": "1HGCM82633A004352", "make": "Honda", "model": "Accord", "year": 2022 }
+  }'
+
+# 5. Idempotency Key Mismatch (same key, different vehicle VIN -> Returns 422 IDEMPOTENCY_KEY_MISMATCH)
+curl -i -X POST http://localhost:8080/api/v1/appointments \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: demo-key-001" \
+  -d '{
+    "dealershipId": "d0000000-0000-0000-0000-000000000001",
+    "serviceTypeId": "c0000000-0000-0000-0000-000000000001",
+    "startTime": "2026-11-16T09:00:00Z",
+    "customer": { "fullName": "Jane Doe", "email": "jane@example.com", "phone": "+447911123456" },
+    "vehicle": { "vin": "1HGCM82633A004353", "make": "Honda", "model": "Accord", "year": 2022 }
+  }'
+
+# 6. Verify PII-free logs (shows masked vinSuffix, no email/phone)
+docker compose logs app | grep "Booking"
+
+# 7. Scrape custom business metrics
+curl -s http://localhost:8080/actuator/prometheus | grep appointments_booked_total
+```
+
 ---
 
 ## 4. API Reference & Sample cURL Requests
