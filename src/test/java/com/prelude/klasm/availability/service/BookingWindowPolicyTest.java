@@ -1,4 +1,4 @@
-package com.prelude.klasm.appointment.service;
+package com.prelude.klasm.availability.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;

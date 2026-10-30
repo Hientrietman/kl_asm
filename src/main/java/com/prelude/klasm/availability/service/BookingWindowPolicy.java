@@ -1,4 +1,4 @@
-package com.prelude.klasm.appointment.service;
+package com.prelude.klasm.availability.service;
 
 import com.prelude.klasm.common.error.ApiException;
 import com.prelude.klasm.common.error.ErrorCode;
@@ -19,14 +19,17 @@ public class BookingWindowPolicy {
     }
 
     public void check(Instant startTime) {
-        Instant now = clock.instant();
-        Instant earliest = now.plus(properties.minLeadTime());
-        Instant latest = now.plus(properties.maxHorizon());
-        if (startTime.isBefore(earliest) || startTime.isAfter(latest)) {
+        if (!allows(startTime)) {
             throw new ApiException(
                     ErrorCode.INVALID_BOOKING_WINDOW,
                     "startTime must be between " + properties.minLeadTime().toMinutes() + " minutes and "
                             + properties.maxHorizon().toDays() + " days from now.");
         }
+    }
+
+    public boolean allows(Instant startTime) {
+        Instant now = clock.instant();
+        return !startTime.isBefore(now.plus(properties.minLeadTime()))
+                && !startTime.isAfter(now.plus(properties.maxHorizon()));
     }
 }

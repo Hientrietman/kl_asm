@@ -68,6 +68,23 @@ class ErrorHandlingIT {
     }
 
     @Test
+    void missingRequiredParameterReturnsValidationError() {
+        Response response = given().port(port).get("/test/errors/page");
+
+        assertProblem(response, 400, "VALIDATION_ERROR");
+    }
+
+    @Test
+    void unsupportedMethodKeepsTraceIdWithoutCatalogCode() {
+        given().port(port)
+                .delete("/test/errors/ok")
+                .then()
+                .statusCode(405)
+                .contentType("application/problem+json")
+                .body("traceId", matchesPattern(TRACE_ID));
+    }
+
+    @Test
     void malformedUuidReturnsValidationError() {
         Response response = given().port(port).get("/test/errors/items/not-a-uuid");
 

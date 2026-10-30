@@ -1,4 +1,4 @@
-package com.prelude.klasm.appointment.service;
+package com.prelude.klasm.availability.service;
 
 import java.time.Duration;
 import org.springframework.boot.context.properties.ConfigurationProperties;

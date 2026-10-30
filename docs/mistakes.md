@@ -9,6 +9,7 @@ Read "Active prevention rules" at the start of every session. Add entries with t
 | M-001 | Always write repository paths in docs and AGENTS.md in full from the root (e.g. `docs/requirements/requirements.md`); verify each path with a file search after editing. |
 | M-002 | Keep the stack identical in AGENTS.md §2, requirements ADR-004/ADR-007, design §7/§10 and `pom.xml`; grep for the Java and Spring Boot versions after any stack change. |
 | M-003 | Concurrent conflicting inserts on a GiST exclusion constraint can fail with `40P01` (deadlock), not only `23P01`; the 20-request concurrency test must assert zero 5xx and every loser gets a catalog 409. |
+| M-004 | In `handleExceptionInternal`, resolve a null body from `ErrorResponse` before adding `code`/`traceId`; test missing-parameter 400 and 405 responses for both members. |
 
 ## Entries
 
@@ -50,3 +51,16 @@ Read "Active prevention rules" at the start of every session. Add entries with t
 - Prevention rule: Never assume one SQLSTATE for constraint races; prove the error path with the parallel test and assert that no response is 5xx.
 - Occurrences: 1 (2026-10-29)
 - Promoted to AGENTS.md: yes, section 5
+
+### M-004: Framework 400s had no catalog code because the handler enriched only non-null bodies
+- Date: 2026-10-30
+- Area: api
+- Severity: medium
+- Source: AI output
+- What happened: `GlobalExceptionHandler.handleExceptionInternal` (B2) added `code` and `traceId` only when the body was already a `ProblemDetail`. Spring's `ResponseEntityExceptionHandler` passes `null` for most framework errors (missing request parameter, 405, 415) and builds the body later in `super`, so a missing `date` parameter returned 400 without `code` or `traceId`.
+- Root cause: Assumed every framework handler passes a prepared body; B2 tests covered only the overridden handlers.
+- How it was detected: `AvailabilityIT.validatesDealershipServiceTypeAndDate` (B7) expected `VALIDATION_ERROR` and got `null`.
+- Fix: Resolve the body from `ErrorResponse.updateAndGetBody` before enriching; added `ErrorHandlingIT` cases for a missing parameter (400 with code) and 405 (traceId present).
+- Prevention rule: For every framework exception that reaches the handler, test that the response has `code` (when the status is in the catalog) and `traceId`; do not rely on `body` being non-null in `handleExceptionInternal`.
+- Occurrences: 1 (2026-10-30)
+- Promoted to AGENTS.md: no

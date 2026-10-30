@@ -6,6 +6,7 @@ import com.prelude.klasm.appointment.repository.AppointmentResourceLockRepositor
 import com.prelude.klasm.appointment.repository.NewAppointment;
 import com.prelude.klasm.availability.service.AvailabilityService;
 import com.prelude.klasm.availability.service.BayCandidate;
+import com.prelude.klasm.availability.service.BookingWindowPolicy;
 import com.prelude.klasm.availability.service.TechnicianCandidate;
 import com.prelude.klasm.catalog.service.ServiceTypeService;
 import com.prelude.klasm.catalog.service.ServiceTypeView;
@@ -19,6 +20,7 @@ import com.prelude.klasm.dealership.service.TechnicianView;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -36,6 +38,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class BookingService {
 
     static final int MAX_ATTEMPTS = 3;
+    static final int MAX_ALTERNATIVES = 3;
 
     private final DealershipService dealershipService;
     private final ServiceTypeService serviceTypeService;
@@ -148,10 +151,18 @@ public class BookingService {
                         || (lastConflict == null && !plan.baysExhausted())
                 ? "TECHNICIAN"
                 : "SERVICE_BAY";
-        throw conflict(
+        Map<String, Object> conflict = new LinkedHashMap<>();
+        conflict.put("resource", resource);
+        if (command.serviceBayId() == null && command.technicianId() == null) {
+            conflict.put(
+                    "alternatives",
+                    availabilityService.alternativeStarts(
+                            dealership, serviceType.id(), serviceType.durationMinutes(), start, MAX_ALTERNATIVES));
+        }
+        throw new ApiException(
                 ErrorCode.NO_AVAILABILITY,
                 "No service bay and qualified technician are both free for the requested time.",
-                resource);
+                Map.of("conflict", conflict));
     }
 
     private AssignmentPlan plan(BookingCommand command, DealershipView dealership, Instant start, Instant end) {

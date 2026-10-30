@@ -18,6 +18,8 @@ import com.prelude.klasm.appointment.repository.AppointmentResourceLockRepositor
 import com.prelude.klasm.appointment.repository.NewAppointment;
 import com.prelude.klasm.availability.service.AvailabilityService;
 import com.prelude.klasm.availability.service.BayCandidate;
+import com.prelude.klasm.availability.service.BookingProperties;
+import com.prelude.klasm.availability.service.BookingWindowPolicy;
 import com.prelude.klasm.availability.service.TechnicianCandidate;
 import com.prelude.klasm.catalog.service.ServiceTypeService;
 import com.prelude.klasm.catalog.service.ServiceTypeView;
