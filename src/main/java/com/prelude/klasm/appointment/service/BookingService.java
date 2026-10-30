@@ -21,6 +21,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -42,6 +43,7 @@ public class BookingService {
     private final CustomerService customerService;
     private final AppointmentInsertRepository insertRepository;
     private final AppointmentResourceLockRepository resourceLockRepository;
+    private final AppointmentQueryService queryService;
     private final BookingWindowPolicy bookingWindowPolicy;
     private final TransactionTemplate attemptTransaction;
     private final Clock clock;
@@ -53,6 +55,7 @@ public class BookingService {
             CustomerService customerService,
             AppointmentInsertRepository insertRepository,
             AppointmentResourceLockRepository resourceLockRepository,
+            AppointmentQueryService queryService,
             BookingWindowPolicy bookingWindowPolicy,
             PlatformTransactionManager transactionManager,
             Clock clock) {
@@ -62,13 +65,21 @@ public class BookingService {
         this.customerService = customerService;
         this.insertRepository = insertRepository;
         this.resourceLockRepository = resourceLockRepository;
+        this.queryService = queryService;
         this.bookingWindowPolicy = bookingWindowPolicy;
         this.attemptTransaction = new TransactionTemplate(transactionManager);
         this.attemptTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         this.clock = clock;
     }
 
-    public AppointmentView book(BookingCommand command) {
+    public BookingResult book(BookingCommand command) {
+        String requestHash = command.idempotencyKey() == null ? null : RequestHash.of(command);
+        // Checked first: a retry must return the original result even if the time rules would now reject it
+        Optional<BookingResult> replay = replay(command.idempotencyKey(), requestHash);
+        if (replay.isPresent()) {
+            return replay.get();
+        }
+
         DealershipView dealership = dealershipService.getActive(command.dealershipId());
         ServiceTypeView serviceType = serviceTypeService.getActive(command.serviceTypeId());
         Instant start = command.startTime();
@@ -87,22 +98,29 @@ public class BookingService {
             BayCandidate bay = plan.bay();
             TechnicianCandidate technician = plan.technician();
             try {
-                Inserted inserted = insert(command, start, end, bay, technician);
-                return new AppointmentView(
-                        inserted.id(),
-                        AppointmentStatus.CONFIRMED,
-                        dealership.id(),
-                        dealership.timeZone(),
-                        serviceType.id(),
-                        new AppointmentView.ServiceBay(bay.id(), bay.code()),
-                        new AppointmentView.Technician(technician.id(), technician.fullName()),
-                        inserted.customerId(),
-                        inserted.vehicleId(),
-                        start,
-                        end,
-                        null,
-                        null);
+                Inserted inserted = insert(command, requestHash, start, end, bay, technician);
+                return new BookingResult(
+                        new AppointmentView(
+                                inserted.id(),
+                                AppointmentStatus.CONFIRMED,
+                                dealership.id(),
+                                dealership.timeZone(),
+                                serviceType.id(),
+                                new AppointmentView.ServiceBay(bay.id(), bay.code()),
+                                new AppointmentView.Technician(technician.id(), technician.fullName()),
+                                inserted.customerId(),
+                                inserted.vehicleId(),
+                                start,
+                                end,
+                                null,
+                                null),
+                        true);
             } catch (AppointmentConflictException conflict) {
+                // A concurrent request with the same key may have won the race (FR-3.4)
+                replay = replay(command.idempotencyKey(), requestHash);
+                if (replay.isPresent()) {
+                    return replay.get();
+                }
                 lastConflict = conflict.kind();
                 switch (conflict.kind()) {
                     case VEHICLE ->
@@ -162,8 +180,27 @@ public class BookingService {
         return new AssignmentPlan(bays, technicians);
     }
 
+    private Optional<BookingResult> replay(String idempotencyKey, String requestHash) {
+        if (idempotencyKey == null) {
+            return Optional.empty();
+        }
+        return queryService.findByIdempotencyKey(idempotencyKey).map(stored -> {
+            if (!stored.requestHash().equals(requestHash)) {
+                throw new ApiException(
+                        ErrorCode.IDEMPOTENCY_KEY_MISMATCH,
+                        "The Idempotency-Key was already used with a different request.");
+            }
+            return new BookingResult(stored.appointment(), false);
+        });
+    }
+
     private Inserted insert(
-            BookingCommand command, Instant start, Instant end, BayCandidate bay, TechnicianCandidate technician) {
+            BookingCommand command,
+            String requestHash,
+            Instant start,
+            Instant end,
+            BayCandidate bay,
+            TechnicianCandidate technician) {
         return attemptTransaction.execute(status -> {
             resourceLockRepository.lockResources(bay.id(), technician.id(), command.vin());
             UUID customerId = customerService.resolveCustomer(
@@ -181,8 +218,8 @@ public class BookingService {
                     command.serviceTypeId(),
                     start,
                     end,
-                    null,
-                    null,
+                    command.idempotencyKey(),
+                    requestHash,
                     command.notes(),
                     clock.instant()));
             return new Inserted(id, customerId, vehicleId);

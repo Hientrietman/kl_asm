@@ -10,9 +10,12 @@ import com.prelude.klasm.dealership.repository.TechnicianEntity;
 import com.prelude.klasm.dealership.repository.TechnicianRepository;
 import java.time.DayOfWeek;
 import java.time.ZoneId;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -101,6 +104,27 @@ public class DealershipService {
     @Transactional(readOnly = true)
     public boolean hasQualifiedTechnician(UUID dealershipId, UUID serviceTypeId) {
         return technicians.existsQualified(dealershipId, serviceTypeId);
+    }
+
+    /** Time zone per dealership id, for displaying appointments (any active state). */
+    @Transactional(readOnly = true)
+    public Map<UUID, ZoneId> timeZones(Collection<UUID> dealershipIds) {
+        return dealerships.findAllById(dealershipIds).stream()
+                .collect(Collectors.toMap(DealershipEntity::getId, d -> ZoneId.of(d.getTimeZone())));
+    }
+
+    /** Bay code per bay id, for displaying appointments (any active state). */
+    @Transactional(readOnly = true)
+    public Map<UUID, String> serviceBayCodes(Collection<UUID> serviceBayIds) {
+        return serviceBays.findAllById(serviceBayIds).stream()
+                .collect(Collectors.toMap(ServiceBayEntity::getId, ServiceBayEntity::getCode));
+    }
+
+    /** Full name per technician id, for displaying appointments (any active state). */
+    @Transactional(readOnly = true)
+    public Map<UUID, String> technicianNames(Collection<UUID> technicianIds) {
+        return technicians.findAllById(technicianIds).stream()
+                .collect(Collectors.toMap(TechnicianEntity::getId, TechnicianEntity::getFullName));
     }
 
     private void requireActive(UUID dealershipId) {

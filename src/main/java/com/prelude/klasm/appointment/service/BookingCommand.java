@@ -3,7 +3,7 @@ package com.prelude.klasm.appointment.service;
 import java.time.Instant;
 import java.util.UUID;
 
-/** A normalized, field-validated booking request (FR-1). */
+/** A normalized, field-validated booking request (FR-1). {@code idempotencyKey} is optional (FR-3.4). */
 public record BookingCommand(
         UUID dealershipId,
         UUID serviceTypeId,
@@ -17,4 +17,5 @@ public record BookingCommand(
         Integer vehicleYear,
         UUID serviceBayId,
         UUID technicianId,
-        String notes) {}
+        String notes,
+        String idempotencyKey) {}

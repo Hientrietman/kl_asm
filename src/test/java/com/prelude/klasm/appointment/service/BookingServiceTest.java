@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -34,6 +35,7 @@ import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -62,6 +64,7 @@ class BookingServiceTest {
     private final AppointmentInsertRepository insertRepository = mock(AppointmentInsertRepository.class);
     private final AppointmentResourceLockRepository resourceLockRepository =
             mock(AppointmentResourceLockRepository.class);
+    private final AppointmentQueryService queryService = mock(AppointmentQueryService.class);
     private BookingService bookingService;
 
     @BeforeEach
@@ -76,6 +79,7 @@ class BookingServiceTest {
                 customerService,
                 insertRepository,
                 resourceLockRepository,
+                queryService,
                 new BookingWindowPolicy(clock, new BookingProperties(Duration.ofMinutes(60), Duration.ofDays(90))),
                 transactionManager,
                 clock);
@@ -102,8 +106,10 @@ class BookingServiceTest {
 
     @Test
     void assignsFirstBayAndTechnician() {
-        AppointmentView view = bookingService.book(command(START, null, null));
+        BookingResult result = bookingService.book(command(START, null, null));
+        AppointmentView view = result.appointment();
 
+        assertThat(result.created()).isTrue();
         assertThat(view.serviceBay().id()).isEqualTo(bay1.id());
         assertThat(view.technician().id()).isEqualTo(tech1.id());
         assertThat(view.endTime()).isEqualTo(START.plusSeconds(3600));
@@ -115,7 +121,7 @@ class BookingServiceTest {
     void retriesWithNextBayAfterBayConflict() {
         failInsertsWith(AppointmentConflictException.Kind.SERVICE_BAY, 1);
 
-        AppointmentView view = bookingService.book(command(START, null, null));
+        AppointmentView view = bookingService.book(command(START, null, null)).appointment();
 
         assertThat(view.serviceBay().id()).isEqualTo(bay2.id());
         assertThat(view.technician().id()).isEqualTo(tech1.id());
@@ -125,7 +131,7 @@ class BookingServiceTest {
     void retriesWithNextTechnicianAfterTechnicianConflict() {
         failInsertsWith(AppointmentConflictException.Kind.TECHNICIAN, 1);
 
-        AppointmentView view = bookingService.book(command(START, null, null));
+        AppointmentView view = bookingService.book(command(START, null, null)).appointment();
 
         assertThat(view.serviceBay().id()).isEqualTo(bay1.id());
         assertThat(view.technician().id()).isEqualTo(tech2.id());
@@ -197,6 +203,74 @@ class BookingServiceTest {
         assertThat(inserted.getValue().createdAt()).isEqualTo(NOW);
     }
 
+    @Test
+    void replaysStoredBookingForSameKeyAndBodyWithoutInserting() {
+        BookingCommand command = command(START, null, null, "key-1");
+        AppointmentView stored = storedView();
+        when(queryService.findByIdempotencyKey("key-1"))
+                .thenReturn(Optional.of(new AppointmentQueryService.StoredBooking(stored, RequestHash.of(command))));
+
+        BookingResult result = bookingService.book(command);
+
+        assertThat(result.created()).isFalse();
+        assertThat(result.appointment()).isEqualTo(stored);
+        verify(insertRepository, never()).insertConfirmed(any());
+    }
+
+    @Test
+    void rejectsSameKeyWithDifferentBody() {
+        when(queryService.findByIdempotencyKey("key-1"))
+                .thenReturn(Optional.of(new AppointmentQueryService.StoredBooking(storedView(), "other-hash")));
+
+        assertError(() -> bookingService.book(command(START, null, null, "key-1")), ErrorCode.IDEMPOTENCY_KEY_MISMATCH);
+    }
+
+    @Test
+    void returnsWinnerWhenConcurrentRequestWithSameKeyInsertedFirst() {
+        BookingCommand command = command(START, null, null, "key-1");
+        AppointmentView stored = storedView();
+        when(queryService.findByIdempotencyKey("key-1"))
+                .thenReturn(Optional.empty())
+                .thenReturn(Optional.of(new AppointmentQueryService.StoredBooking(stored, RequestHash.of(command))));
+        failInsertsWith(AppointmentConflictException.Kind.IDEMPOTENCY_KEY, 1);
+
+        BookingResult result = bookingService.book(command);
+
+        assertThat(result.created()).isFalse();
+        assertThat(result.appointment()).isEqualTo(stored);
+        verify(insertRepository, times(1)).insertConfirmed(any());
+    }
+
+    @Test
+    void storesIdempotencyKeyAndRequestHash() {
+        BookingCommand command = command(START, null, null, "key-1");
+        when(queryService.findByIdempotencyKey("key-1")).thenReturn(Optional.empty());
+
+        bookingService.book(command);
+
+        ArgumentCaptor<NewAppointment> inserted = ArgumentCaptor.forClass(NewAppointment.class);
+        verify(insertRepository).insertConfirmed(inserted.capture());
+        assertThat(inserted.getValue().idempotencyKey()).isEqualTo("key-1");
+        assertThat(inserted.getValue().requestHash()).isEqualTo(RequestHash.of(command));
+    }
+
+    private AppointmentView storedView() {
+        return new AppointmentView(
+                UUID.randomUUID(),
+                AppointmentStatus.CONFIRMED,
+                dealershipId,
+                ZoneId.of("UTC"),
+                serviceTypeId,
+                new AppointmentView.ServiceBay(bay1.id(), bay1.code()),
+                new AppointmentView.Technician(tech1.id(), tech1.fullName()),
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                START,
+                START.plusSeconds(3600),
+                null,
+                null);
+    }
+
     private void failInsertsWith(AppointmentConflictException.Kind kind, int failures) {
         var stub = doThrow(new AppointmentConflictException(kind, null));
         for (int i = 1; i < failures; i++) {
@@ -212,6 +286,10 @@ class BookingServiceTest {
     }
 
     private BookingCommand command(Instant start, UUID bayId, UUID technicianId) {
+        return command(start, bayId, technicianId, null);
+    }
+
+    private BookingCommand command(Instant start, UUID bayId, UUID technicianId, String idempotencyKey) {
         return new BookingCommand(
                 dealershipId,
                 serviceTypeId,
@@ -225,6 +303,7 @@ class BookingServiceTest {
                 null,
                 bayId,
                 technicianId,
-                null);
+                null,
+                idempotencyKey);
     }
 }
