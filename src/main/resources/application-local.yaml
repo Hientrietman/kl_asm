@@ -1,0 +1,6 @@
+spring:
+  datasource:
+    # Defaults match docker-compose.yml for local development only
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/klasm}
+    username: ${DB_USERNAME:klasm}
+    password: ${DB_PASSWORD:klasm}

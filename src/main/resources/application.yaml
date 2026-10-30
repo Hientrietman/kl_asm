@@ -1,3 +1,40 @@
 spring:
   application:
     name: klasm
+  profiles:
+    default: local
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: readinessState,db
+
+booking:
+  min-lead-time: 60m
+  max-horizon: 90d
+
+---
+spring:
+  config:
+    activate:
+      on-profile: docker
+logging:
+  structured:
+    format:
+      console: ecs
