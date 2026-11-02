@@ -86,3 +86,12 @@ One entry per working session (AGENTS.md §10).
 - Problems found (wrong, missing, risky): Maven wrapper download failed in offline sandbox; solved by linking downloaded maven distribution in `.m2/wrapper/dists`. Docker daemon access on Windows requires unsandboxed execution to reach `\\.\pipe\docker_engine`. Line endings on generated IT initially triggered Spotless check failure; resolved with `spotless:apply`. Random port in OpenAPI server URL was replaced with `http://localhost:8080`.
 - How I verified (docs read, tests, manual check): `.\mvnw.cmd clean verify` BUILD SUCCESS: 92 unit tests, 73 integration tests (all passed), Spotless 101 files clean, JaCoCo report generated, `openapi.yaml` exported and validated.
 - What I changed or rejected, and why: OTLP exporter and extra Prometheus/Grafana containers left out of scope per handoff notes to avoid unapproved dependencies. k6 chosen for NFR-2 load test harness per user preference.
+
+## 2026-11-02: Complete AI analyze step-by-step documentation
+- Goal / prompt intent: Complete `doc_archived/ai_analyze_step_by_step.md` to trace the entire AI engineering lifecycle from brief analysis and brainstorming to final system design, AGENTS.md rules, vertical slice planning, slice execution, and packaging.
+- What the AI produced: Completed `doc_archived/ai_analyze_step_by_step.md` with Steps 1 through 7 and summary metrics; added `doc_archived/readme.md` directory index.
+- Problems found (wrong, missing, risky): Path checking verified that all referenced files exist in repository; checked folder name `doc_archived/assements` spelling matching repository structure (M-001).
+- How I verified (docs read, tests, manual check): PowerShell `Test-Path` automated verification across all 15 referenced file paths in the narrative.
+- What I changed or rejected, and why: Maintained the user's authentic voice and decisions in Steps 1-2, expanded Steps 3-7 to detail human-in-the-loop decisions (advisory locks in B4, handler null-body fix in B7/M-004, version corrections M-002).
+
+
